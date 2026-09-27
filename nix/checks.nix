@@ -101,6 +101,7 @@ lib.filterAttrs (name: _: lib.hasPrefix "plugin-" name) packages
   };
 
   vm = import ../tests/nixos-test.nix {
+    e2eTests = pkgs.callPackage ../tests/e2e { };
     mockOidc = niks3.packages.${pkgs.stdenv.hostPlatform.system}.mock-oidc-server;
     inherit pkgs;
     nixPkgs = nixPackages;

@@ -1,0 +1,13 @@
+[package]
+name = "nix-grpc-e2e"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+e2e = []
+
+[[test]]
+name = "e2e"
+path = "main.rs"
+required-features = ["e2e"]
