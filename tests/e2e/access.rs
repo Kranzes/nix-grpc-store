@@ -1,25 +1,22 @@
 use crate::fixtures::*;
-use crate::harness::*;
+use crate::harness::{MACHINE, metrics};
 
 const MTLS: &str = "nix-grpc-daemon-mtls.service";
 
 fn wait_for_mtls() {
-    wait_for_unit(MACHINE, MTLS);
-    wait_for_open_port(MACHINE, 50052);
+    wait_for_unit(MTLS);
+    wait_for_open_port(50052);
 }
 
 #[test]
 fn gc_is_refused() {
-    let p = succeed(
-        MACHINE,
-        &format!("nix store add --store '{STORE}' /etc/hello.nix"),
-    );
+    let p = succeed(&format!("nix store add --store '{STORE}' /etc/hello.nix"));
     let p = p.trim();
     for cmd in ["store gc".to_string(), format!("store delete '{p}'")] {
-        let err = fail(MACHINE, &format!("nix {cmd} --store '{STORE}'"));
+        let err = fail(&format!("nix {cmd} --store '{STORE}'"));
         assert!(err.contains("workers collect their own stores"), "{err}");
     }
-    succeed(MACHINE, &format!("nix path-info --store '{STORE}' '{p}'"));
+    succeed(&format!("nix path-info --store '{STORE}' '{p}'"));
 }
 
 #[test]
@@ -28,60 +25,46 @@ fn mtls() {
     let p = hello_path();
     let dir = workdir("mtls");
     let anon = anon_store();
-    succeed(MACHINE, &format!("nix path-info --store '{anon}' '{p}'"));
+    succeed(&format!("nix path-info --store '{anon}' '{p}'"));
     let deny = deny_file(&dir);
-    fail(MACHINE, &format!("nix store add --store '{anon}' {deny}"));
-    assert_journal(
-        MACHINE,
-        MTLS,
-        "event=denied method=Connect cn=- role=read-only",
-    );
+    fail(&format!("nix store add --store '{anon}' {deny}"));
+    assert_journal(MTLS, "event=denied method=Connect cn=- role=read-only");
     let store = cert_store("client");
-    succeed(MACHINE, &format!("nix store info --json --store '{store}'"));
-    succeed(
-        MACHINE,
-        &format!(
-            "nix build --store '{store}' --impure -f /etc/hello.nix --no-link --print-out-paths"
-        ),
-    );
+    succeed(&format!("nix store info --json --store '{store}'"));
+    succeed(&format!(
+        "nix build --store '{store}' --impure -f /etc/hello.nix --no-link --print-out-paths"
+    ));
 }
 
 #[test]
 fn missing_client_cert_yields_a_readable_error() {
-    wait_for_unit(MACHINE, "nix-grpc-daemon-strict.service");
-    wait_for_open_port(MACHINE, 50053);
+    wait_for_unit("nix-grpc-daemon-strict.service");
+    wait_for_open_port(50053);
     let p = hello_path();
     let d = cert_dir();
     let strict = format!("grpc://localhost:50053?ca-cert={d}/ca.pem");
 
-    let err = fail(MACHINE, &format!("nix path-info --store '{strict}' '{p}'"));
+    let err = fail(&format!("nix path-info --store '{strict}' '{p}'"));
     assert!(err.contains("requires a TLS client certificate"), "{err}");
     assert!(err.contains("no client certificate was presented"), "{err}");
 
-    let err = fail(
-        MACHINE,
-        &format!("nix path-info --store 'grpc://localhost:50053' '{p}'"),
-    );
+    let err = fail(&format!(
+        "nix path-info --store 'grpc://localhost:50053' '{p}'"
+    ));
     assert!(err.contains("server certificate is not trusted"), "{err}");
     assert!(
         !err.contains("no client certificate was presented"),
         "{err}"
     );
 
-    let err = fail(
-        MACHINE,
-        &format!(
-            "nix path-info --store '{strict}&client-cert={d}/expired.pem&client-key={d}/expired.key' '{p}'"
-        ),
-    );
+    let err = fail(&format!(
+        "nix path-info --store '{strict}&client-cert={d}/expired.pem&client-key={d}/expired.key' '{p}'"
+    ));
     assert!(err.contains("has expired"), "{err}");
 
-    succeed(
-        MACHINE,
-        &format!(
-            "nix path-info --store '{strict}&client-cert={d}/client.pem&client-key={d}/client.key' '{p}'"
-        ),
-    );
+    succeed(&format!(
+        "nix path-info --store '{strict}&client-cert={d}/client.pem&client-key={d}/client.key' '{p}'"
+    ));
 }
 
 #[test]
@@ -90,19 +73,16 @@ fn acl_read_only_role() {
     let p = hello_path();
     let dir = workdir("acl-ro");
     let ro = cert_store("ro");
-    succeed(MACHINE, &format!("nix path-info --store '{ro}' '{p}'"));
-    succeed(
-        MACHINE,
-        &format!("nix copy --no-check-sigs --from '{ro}' --to {dir}/dst '{p}'"),
-    );
+    succeed(&format!("nix path-info --store '{ro}' '{p}'"));
+    succeed(&format!(
+        "nix copy --no-check-sigs --from '{ro}' --to {dir}/dst '{p}'"
+    ));
     let deny = deny_file(&dir);
-    fail(MACHINE, &format!("nix store add --store '{ro}' {deny}"));
-    fail(
-        MACHINE,
-        &format!("nix build --store '{ro}' --impure -f /etc/hello.nix --no-link"),
-    );
+    fail(&format!("nix store add --store '{ro}' {deny}"));
+    fail(&format!(
+        "nix build --store '{ro}' --impure -f /etc/hello.nix --no-link"
+    ));
     assert_journal(
-        MACHINE,
         MTLS,
         "event=denied method=Connect cn=ro-client role=read-only",
     );
@@ -115,32 +95,26 @@ fn acl_write_role_enforces_signatures() {
     let rw = cert_store("rw");
     // Input-addressed output: a CA path (nix store add) would pass CheckSigs
     write_file(
-        MACHINE,
         &format!("{dir}/acl.nix"),
         &drv_expr("acl-blob", "echo acl-payload > $out"),
     );
-    let up = succeed(
-        MACHINE,
-        &format!(
-            "nix build --store {dir}/src --impure -f {dir}/acl.nix --no-link --print-out-paths"
-        ),
-    );
+    let up = succeed(&format!(
+        "nix build --store {dir}/src --impure -f {dir}/acl.nix --no-link --print-out-paths"
+    ));
     let up = up.trim();
     let copy = format!("nix copy --no-check-sigs --from {dir}/src --to '{rw}' '{up}'");
-    fail(MACHINE, &copy);
+    fail(&copy);
     let key = env("NGS_SIGNING_KEY");
-    succeed(
-        MACHINE,
-        &format!("install -m 0600 /dev/null {dir}/cache-key && echo '{key}' > {dir}/cache-key"),
-    );
-    succeed(
-        MACHINE,
-        &format!("nix store sign -k {dir}/cache-key --store {dir}/src '{up}'"),
-    );
-    succeed(MACHINE, &copy);
-    succeed(MACHINE, &format!("test -e '{up}'"));
+    succeed(&format!(
+        "install -m 0600 /dev/null {dir}/cache-key && echo '{key}' > {dir}/cache-key"
+    ));
+    succeed(&format!(
+        "nix store sign -k {dir}/cache-key --store {dir}/src '{up}'"
+    ));
+    succeed(&copy);
+    succeed(&format!("test -e '{up}'"));
     let deny = deny_file(&dir);
-    fail(MACHINE, &format!("nix store add --store '{rw}' {deny}"));
+    fail(&format!("nix store add --store '{rw}' {deny}"));
 }
 
 #[test]
@@ -149,41 +123,26 @@ fn acl_write_role_builds_via_schedule_and_build_derivation() {
     let dir = workdir("acl-build");
     let rw = cert_store("rw");
     write_file(
-        MACHINE,
         &format!("{dir}/bp.nix"),
         &drv_expr("bp-blob", "echo bp-payload > $out"),
     );
-    let out = succeed(
-        MACHINE,
-        &format!(
-            "nix build --store '{rw}' --eval-store auto --impure -f {dir}/bp.nix --no-link --print-out-paths"
-        ),
-    );
-    succeed(MACHINE, &format!("grep -q bp-payload '{}'", out.trim()));
-    assert_journal(
-        MACHINE,
-        MTLS,
-        "event=rpc method=BuildDerivation cn=rw-client",
-    );
+    let out = succeed(&format!(
+        "nix build --store '{rw}' --eval-store auto --impure -f {dir}/bp.nix --no-link --print-out-paths"
+    ));
+    let built = succeed(&format!("cat '{}'", out.trim()));
+    assert!(built.contains("bp-payload"), "{built}");
+    assert_journal(MTLS, "event=rpc method=BuildDerivation cn=rw-client");
     write_file(
-        MACHINE,
         &format!("{dir}/bp-fail.nix"),
         &drv_expr("bp-fail", "exit 1"),
     );
-    fail(
-        MACHINE,
-        &format!(
-            "nix build --store '{rw}' --eval-store auto --impure -f {dir}/bp-fail.nix --no-link"
-        ),
-    );
-    fail(
-        MACHINE,
-        &format!(
-            "nix build --store '{rw}' --eval-store auto --impure -f {dir}/bp.nix --no-link --repair"
-        ),
-    );
+    fail(&format!(
+        "nix build --store '{rw}' --eval-store auto --impure -f {dir}/bp-fail.nix --no-link"
+    ));
+    fail(&format!(
+        "nix build --store '{rw}' --eval-store auto --impure -f {dir}/bp.nix --no-link --repair"
+    ));
     assert_journal(
-        MACHINE,
         MTLS,
         "event=denied method=BuildDerivation(repair) cn=rw-client",
     );
@@ -192,26 +151,19 @@ fn acl_write_role_builds_via_schedule_and_build_derivation() {
 #[test]
 fn acl_unmatched_cn_is_denied() {
     wait_for_mtls();
-    fail(
-        MACHINE,
-        &format!("nix store info --store '{}'", cert_store("stranger")),
-    );
-    assert_journal(
-        MACHINE,
-        MTLS,
-        "event=denied method=.* cn=stranger role=none",
-    );
+    fail(&format!(
+        "nix store info --store '{}'",
+        cert_store("stranger")
+    ));
+    assert_journal(MTLS, "event=denied method=.* cn=stranger role=none");
 }
 
 fn token_store(dir: &str, name: &str, query: &str) -> String {
     let aud = env("NGS_OIDC_AUDIENCE");
-    succeed(
-        MACHINE,
-        &format!(
-            "curl -sfG 'http://127.0.0.1:8081/issue' --data-urlencode 'aud={aud}' {query} > {dir}/{name}.jwt \
+    succeed(&format!(
+        "curl -sfG 'http://127.0.0.1:8081/issue' --data-urlencode 'aud={aud}' {query} > {dir}/{name}.jwt \
              && test -s {dir}/{name}.jwt"
-        ),
-    );
+    ));
     format!(
         "grpc://localhost:50052?ca-cert={}/ca.pem&token-file={dir}/{name}.jwt",
         cert_dir()
@@ -221,8 +173,8 @@ fn token_store(dir: &str, name: &str, query: &str) -> String {
 #[test]
 fn oidc_bearer_tokens() {
     wait_for_mtls();
-    wait_for_unit(MACHINE, "mock-oidc.service");
-    wait_for_open_port(MACHINE, 8081);
+    wait_for_unit("mock-oidc.service");
+    wait_for_open_port(8081);
     let p = hello_path();
     let dir = workdir("oidc");
     let d = cert_dir();
@@ -243,102 +195,78 @@ fn oidc_bearer_tokens() {
         r#"--data-urlencode sub=someone --data-urlencode 'claims={"groups":["readers"]}'"#,
     );
     let nobody = token_store(&dir, "nobody", "--data-urlencode 'sub=repo:other/x:y'");
-    succeed(
-        MACHINE,
-        &format!(
-            "curl -sfG 'http://127.0.0.1:8081/issue' --data-urlencode aud=elsewhere \
+    succeed(&format!(
+        "curl -sfG 'http://127.0.0.1:8081/issue' --data-urlencode aud=elsewhere \
              --data-urlencode 'sub=repo:myorg/x:y' > {dir}/wrongaud.jwt"
-        ),
-    );
+    ));
     let wrongaud =
         format!("grpc://localhost:50052?ca-cert={d}/ca.pem&token-file={dir}/wrongaud.jwt");
 
-    succeed(MACHINE, &format!("nix path-info --store '{reader}' '{p}'"));
-    fail(
-        MACHINE,
-        &format!("nix build --store '{reader}' --impure -f /etc/hello.nix --no-link"),
-    );
+    succeed(&format!("nix path-info --store '{reader}' '{p}'"));
+    fail(&format!(
+        "nix build --store '{reader}' --impure -f /etc/hello.nix --no-link"
+    ));
     write_file(
-        MACHINE,
         &format!("{dir}/oidc.nix"),
         &drv_expr("oidc-blob", "echo oidc > $out"),
     );
-    succeed(
-        MACHINE,
-        &format!(
-            "nix build --store '{writer}' --eval-store auto --impure -f {dir}/oidc.nix --no-link"
-        ),
-    );
+    succeed(&format!(
+        "nix build --store '{writer}' --eval-store auto --impure -f {dir}/oidc.nix --no-link"
+    ));
     let deny = deny_file(&dir);
-    fail(MACHINE, &format!("nix store add --store '{writer}' {deny}"));
-    succeed(
-        MACHINE,
-        &format!("nix store add --store '{admin}' /etc/hello.nix"),
-    );
-    let err = fail(MACHINE, &format!("nix path-info --store '{nobody}' '{p}'"));
+    fail(&format!("nix store add --store '{writer}' {deny}"));
+    succeed(&format!("nix store add --store '{admin}' /etc/hello.nix"));
+    let err = fail(&format!("nix path-info --store '{nobody}' '{p}'"));
     assert!(
         err.contains("no access rule matches 'oidc:mock:repo:other/x:y'"),
         "{err}"
     );
-    let err = fail(
-        MACHINE,
-        &format!("nix path-info --store '{wrongaud}' '{p}'"),
-    );
+    let err = fail(&format!("nix path-info --store '{wrongaud}' '{p}'"));
     assert!(err.contains("bearer token rejected"), "{err}");
-    assert_journal(MACHINE, MTLS, "event=oidc_rejected.*audience");
-    succeed(MACHINE, &format!("echo garbage > {dir}/garbage.jwt"));
-    fail(
-        MACHINE,
-        &format!(
-            "nix path-info --store 'grpc://localhost:50052?ca-cert={d}/ca.pem&token-file={dir}/garbage.jwt' '{p}'"
-        ),
-    );
+    assert_journal(MTLS, "event=oidc_rejected.*audience");
+    succeed(&format!("echo garbage > {dir}/garbage.jwt"));
+    fail(&format!(
+        "nix path-info --store 'grpc://localhost:50052?ca-cert={d}/ca.pem&token-file={dir}/garbage.jwt' '{p}'"
+    ));
     let with_cert = format!("{}&token-file={dir}/reader.jwt", cert_store("client"));
-    succeed(
-        MACHINE,
-        &format!("nix store add --store '{with_cert}' /etc/hello.nix"),
-    );
-    assert_journal(
-        MACHINE,
-        MTLS,
-        "method=BuildDerivation cn=oidc:mock:repo:myorg/x",
-    );
+    succeed(&format!(
+        "nix store add --store '{with_cert}' /etc/hello.nix"
+    ));
+    assert_journal(MTLS, "method=BuildDerivation cn=oidc:mock:repo:myorg/x");
 }
 
 #[test]
 fn access_log_attributes_clients_by_certificate_cn() {
     wait_for_mtls();
     let p = hello_path();
-    succeed(
-        MACHINE,
-        &format!("nix store info --json --store '{}'", cert_store("client")),
-    );
-    succeed(MACHINE, &format!("nix store info --store '{STORE}'"));
-    succeed(MACHINE, &format!("nix path-info --store '{STORE}' '{p}'"));
+    succeed(&format!(
+        "nix store info --json --store '{}'",
+        cert_store("client")
+    ));
+    succeed(&format!("nix store info --store '{STORE}'"));
+    succeed(&format!("nix path-info --store '{STORE}' '{p}'"));
     let connect = "event=rpc method=Connect cn=localhost .*bytes_out=[0-9][0-9]*";
-    wait_journal_above(MACHINE, MTLS, connect, 0, 20);
+    wait_journal_above(MTLS, connect, 0, 20);
+    assert_journal("nix-grpc-daemon.service", "event=rpc method=Connect cn=- ");
     assert_journal(
-        MACHINE,
-        "nix-grpc-daemon.service",
-        "event=rpc method=Connect cn=- ",
-    );
-    assert_journal(
-        MACHINE,
         "nix-grpc-daemon.service",
         "level=debug event=rpc_start method=QueryPathInfos",
     );
-    assert_no_journal(MACHINE, MTLS, "level=debug");
+    assert_no_journal(MTLS, "level=debug");
 }
 
 #[test]
 fn prometheus_metrics_are_labelled_by_certificate_cn() {
     wait_for_mtls();
-    succeed(
-        MACHINE,
-        &format!("nix store info --json --store '{}'", cert_store("client")),
-    );
-    succeed(
-        MACHINE,
-        r#"curl -sf http://127.0.0.1:9464/metrics | grep -cE 'nix_grpc_rpcs_total\{.*cn="localhost".*method="Connect".*\} [0-9]+'"#,
+    succeed(&format!(
+        "nix store info --json --store '{}'",
+        cert_store("client")
+    ));
+    let lines = metrics(MACHINE, 9464);
+    assert!(
+        lines.iter().any(|l| l.starts_with("nix_grpc_rpcs_total{")
+            && l.contains(r#"cn="localhost""#)
+            && l.contains(r#"method="Connect""#)),
+        "{lines:#?}"
     );
 }

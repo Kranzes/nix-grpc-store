@@ -217,30 +217,22 @@ pkgs.testers.runNixOSTest {
     };
 
   testScript = ''
-    import os, subprocess
-
+    ${import ./lib/e2e.nix { inherit pkgs e2eTests; }}
     machine.wait_for_unit("nix-daemon.socket")
     machine.wait_for_unit("nix-grpc-daemon.socket")
 
-    def run_e2e(*args: str) -> None:
-        env = dict(os.environ)
-        env.update({
-            "NGS_SSH": "${pkgs.openssh}/bin/ssh",
-            "NGS_SSH_CONFIG": "${pkgs.systemd}/lib/systemd/ssh_config.d/20-systemd-ssh-proxy.conf",
-            "NGS_MACHINE_SOCK": str(machine.vsock_host),
-            "NGS_CERT_DIR": "${certDir}",
-            "NGS_OIDC_AUDIENCE": "${oidcAudience}",
-            "NGS_SIGNING_KEY": "${signingSecretKey}",
-        })
-        subprocess.run(["${e2eTests}/bin/nix-grpc-e2e", *args, "--nocapture"], env=env, check=True)
-
+    env = {
+        "NGS_CERT_DIR": "${certDir}",
+        "NGS_OIDC_AUDIENCE": "${oidcAudience}",
+        "NGS_SIGNING_KEY": "${signingSecretKey}",
+    }
     with subtest("daemon lifecycle"):
-        run_e2e("lifecycle::", "--test-threads=1")
+        run_e2e({"machine": machine}, env, "lifecycle::", "--test-threads=1")
 
     with subtest("transfers, access control, logs and metrics"):
-        run_e2e("transfer::", "access::", "--test-threads=4")
+        run_e2e({"machine": machine}, env, "transfer::", "access::", "--test-threads=4")
 
     with subtest("benchmarks"):
-        run_e2e("bench::", "--test-threads=1")
+        run_e2e({"machine": machine}, env, "bench::", "--test-threads=1")
   '';
 }

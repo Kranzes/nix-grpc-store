@@ -1,11 +1,11 @@
 use std::env as std_env;
 use std::io::Read;
 use std::process::{Command, Stdio};
-use std::sync::Once;
+use std::sync::{Mutex, Once};
 use std::thread;
 use std::time::{Duration, Instant};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Node(pub &'static str);
 
 pub const MACHINE: Node = Node("machine");
@@ -59,7 +59,9 @@ fn drain<R: Read + Send + 'static>(mut r: R) -> thread::JoinHandle<String> {
 fn run_once(node: Node, cmd: &str, timeout: Duration) -> Out {
     let mut child = Command::new(env("NGS_SSH"))
         .args(ssh_args(node))
-        .arg(format!("set -euo pipefail\n{cmd}"))
+        .arg(format!(
+            "( set -euo pipefail\n{cmd}\n)\necho \"{RC_MARK}$?\"\n"
+        ))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -82,13 +84,26 @@ fn run_once(node: Node, cmd: &str, timeout: Duration) -> Out {
         }
         thread::sleep(Duration::from_millis(100));
     };
+    let mut stdout = out.join().unwrap();
+    // ssh exits 255 when the remote command dies from a signal, so the
+    // command's own status travels in the output.
+    let code = match stdout.rfind(RC_MARK) {
+        Some(at) => {
+            let rc = stdout[at + RC_MARK.len()..].trim().parse().unwrap_or(-1);
+            stdout.truncate(at);
+            rc
+        }
+        None => status.code().unwrap_or(-1),
+    };
     Out {
-        code: status.code().unwrap_or(-1),
-        stdout: out.join().unwrap(),
+        code,
+        stdout,
         stderr: err.join().unwrap(),
         timed_out,
     }
 }
+
+const RC_MARK: &str = "__NGS_RC=";
 
 fn connect_failed(stderr: &str) -> bool {
     [
@@ -102,10 +117,11 @@ fn connect_failed(stderr: &str) -> bool {
     .any(|m| stderr.contains(m))
 }
 
-static READY: Once = Once::new();
+static READY: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+static HEARTBEAT: Once = Once::new();
 
 fn ensure_ready(node: Node) {
-    READY.call_once(|| {
+    HEARTBEAT.call_once(|| {
         let start = Instant::now();
         thread::spawn(move || {
             loop {
@@ -113,12 +129,21 @@ fn ensure_ready(node: Node) {
                 println!("[e2e] heartbeat t={}s", start.elapsed().as_secs());
             }
         });
-        let deadline = Instant::now() + Duration::from_secs(120);
-        while run_once(node, "true", Duration::from_secs(20)).code != 0 {
-            assert!(Instant::now() < deadline, "ssh backdoor never became ready");
-            thread::sleep(Duration::from_millis(500));
-        }
     });
+    let mut ready = READY.lock().unwrap_or_else(|e| e.into_inner());
+    if ready.contains(&node.0) {
+        return;
+    }
+    let deadline = Instant::now() + Duration::from_secs(120);
+    while run_once(node, "true", Duration::from_secs(20)).code != 0 {
+        assert!(
+            Instant::now() < deadline,
+            "ssh backdoor of {} never became ready",
+            node.0
+        );
+        thread::sleep(Duration::from_millis(500));
+    }
+    ready.push(node.0);
 }
 
 pub fn run_t(node: Node, cmd: &str, secs: u64) -> Out {
@@ -174,11 +199,17 @@ pub fn fail(node: Node, cmd: &str) -> String {
 
 pub fn wait_until_succeeds(node: Node, cmd: &str, secs: u64) {
     let deadline = Instant::now() + Duration::from_secs(secs);
-    while run_t(node, cmd, 60).code != 0 {
+    loop {
+        let o = run_t(node, cmd, 60);
+        if o.code == 0 {
+            return;
+        }
         assert!(
             Instant::now() < deadline,
-            "[{}] not true after {secs}s: {cmd}",
-            node.0
+            "[{}] not true after {secs}s: {cmd}\nlast output (exit {}): {}",
+            node.0,
+            o.code,
+            o.combined()
         );
         thread::sleep(Duration::from_millis(500));
     }
@@ -239,4 +270,29 @@ pub fn wait_journal_above(node: Node, unit: &str, pattern: &str, before: u64, se
 
 pub fn write_file(node: Node, path: &str, content: &str) {
     succeed(node, &format!("cat > {path} <<'NGSEOF'\n{content}\nNGSEOF"));
+}
+
+pub fn retry(secs: u64, what: &str, mut f: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(secs);
+    while !f() {
+        assert!(Instant::now() < deadline, "not true after {secs}s: {what}");
+        thread::sleep(Duration::from_millis(500));
+    }
+}
+
+pub fn sleep(secs: u64) {
+    thread::sleep(Duration::from_secs(secs));
+}
+
+pub fn metrics(node: Node, port: u16) -> Vec<String> {
+    succeed(node, &format!("curl -sf http://127.0.0.1:{port}/metrics"))
+        .lines()
+        .map(String::from)
+        .collect()
+}
+
+pub fn unit_result(node: Node, unit: &str) -> String {
+    succeed(node, &format!("systemctl show -p Result --value {unit}"))
+        .trim()
+        .to_string()
 }
