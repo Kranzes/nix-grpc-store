@@ -6,6 +6,7 @@
   pkgs,
   nixPkgs,
   module,
+  e2eTests,
 }:
 
 let
@@ -25,6 +26,8 @@ in
 pkgs.testers.runNixOSTest {
   name = "nix-grpc-store-acme-substituter";
   globalTimeout = 600;
+  sshBackdoor.enable = true;
+  defaults.virtualisation.qemu.enableSharedMemory = true;
 
   nodes = {
     server =
@@ -176,6 +179,7 @@ pkgs.testers.runNixOSTest {
         environment.LEGO_CA_CERTIFICATES = "/run/root_ca.crt";
       };
       networking.firewall.allowedTCPPorts = [ 80 ];
+      environment.systemPackages = [ pkgs.openssl ];
 
       nix.package = nixPkgs.nix-everything;
       programs.nix-grpc-store.enable = true;
@@ -188,40 +192,12 @@ pkgs.testers.runNixOSTest {
   };
 
   testScript = ''
+    ${import ./lib/e2e.nix { inherit pkgs e2eTests; }}
     start_all()
     server.wait_for_unit("step-ca.service")
     server.wait_for_unit("nix-grpc-daemon.socket")
     server.wait_for_open_port(50051)
 
-    with subtest("host1 obtains a certificate via ACME"):
-        # The "Ensure certificate" unit installs a selfsigned placeholder
-        # first; wait until the ACME-issued cert replaced it.
-        host1.wait_until_succeeds(
-            "${pkgs.openssl}/bin/openssl x509 -in /var/lib/acme/host1/cert.pem -noout -subject -issuer "
-            "| grep -q 'Test Intermediate CA'"
-        )
-        host1.succeed(
-            "${pkgs.openssl}/bin/openssl x509 -in /var/lib/acme/host1/cert.pem -noout -subject "
-            "| grep -q 'CN *= *host1'"
-        )
-
-    with subtest("server builds and signs a path"):
-        p = server.succeed(
-            "nix build --impure -f /etc/hello.nix --no-link --print-out-paths"
-        ).strip()
-        server.succeed(f"nix store sign -k /etc/cache-key '{p}'")
-
-    with subtest("host1 substitutes the signed path over gRPC (read-only cert)"):
-        host1.fail(f"test -e '{p}'")
-        host1.succeed(f"nix-store -r '{p}'")
-        host1.succeed(f"grep -q hello-over-grpc '{p}'")
-
-    with subtest("read-only host1 cannot write"):
-        host1.succeed("echo deny > /root/denyfile")
-        host1.fail("nix store add --store '${storeUri}' /root/denyfile")
-        server.succeed(
-            "journalctl -u nix-grpc-daemon.service | "
-            "grep -q 'event=denied .*cn=host1 role=read-only'"
-        )
+    run_e2e({"server": server, "host1": host1}, {}, "acme::", "--test-threads=4")
   '';
 }

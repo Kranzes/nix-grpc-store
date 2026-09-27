@@ -101,6 +101,7 @@
             pkgs = nixpkgs.legacyPackages.${system};
             nixPkgs = nixPackagesFor nixpkgs.legacyPackages.${system};
             module = self.nixosModules.default;
+            e2eTests = nixpkgs.legacyPackages.${system}.callPackage ./tests/e2e { };
           };
         }
       );

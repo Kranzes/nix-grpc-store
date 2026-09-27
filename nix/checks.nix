@@ -96,6 +96,7 @@ lib.filterAttrs (name: _: lib.hasPrefix "plugin-" name) packages
   # Exercises the README ACME/step-ca substituter example.
   acme-vm = import ../tests/acme-substituter-test.nix {
     inherit pkgs;
+    e2eTests = pkgs.callPackage ../tests/e2e { };
     nixPkgs = nixPackages;
     module = nixosModule;
   };
