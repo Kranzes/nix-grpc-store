@@ -51,8 +51,8 @@ fn copy_and_remote_build_hide_the_round_trip() {
     let system = env("NGS_SYSTEM");
 
     succeed(&format!(
-        "mkdir -p /root/small && for i in $(seq {N_PATHS}); do \
-         head -c 4096 /dev/urandom | base64 > /root/small/f$i; done"
+        "mkdir -p /root/small && for i in $(seq {N_PATHS}); do {}; done",
+        random_file_cmd("/root/small/f$i", 4096)
     ));
     let paths: Vec<String> = succeed("cd /root/small && nix-store --store /root/src --add f*")
         .lines()

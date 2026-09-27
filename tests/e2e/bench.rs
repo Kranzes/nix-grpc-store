@@ -14,8 +14,12 @@ fn blob(tag: &str) -> String {
     .to_string()
 }
 
-fn bench(label: &str, uri: &str, path: &str) -> f64 {
+fn fresh_bench_dir() {
     succeed("rm -rf /root/bench && mkdir -p /root/bench");
+}
+
+fn bench(label: &str, uri: &str, path: &str) -> f64 {
+    fresh_bench_dir();
     let t0 = Instant::now();
     succeed(&copy_cmd(uri, path));
     let dt = t0.elapsed().as_secs_f64();
@@ -38,7 +42,7 @@ fn throughput_grpc_vs_unix_socket_daemon() {
 fn perf_profile_of_grpc_copy() {
     let path = blob("rand");
     for (label, uri) in [("unix", "daemon"), ("grpc", STORE)] {
-        succeed("rm -rf /root/bench && mkdir -p /root/bench");
+        fresh_bench_dir();
         let out = succeed(&format!(
             "perf stat -a \
                  -e task-clock,context-switches,cycles,instructions,cache-misses,syscalls:sys_enter_read,syscalls:sys_enter_write \
@@ -47,7 +51,7 @@ fn perf_profile_of_grpc_copy() {
         ));
         println!("[perf-stat {label}]\n{out}");
     }
-    succeed("rm -rf /root/bench && mkdir -p /root/bench");
+    fresh_bench_dir();
     succeed(&format!(
         "perf record -a -g -F 999 -o /root/perf.data -- {}",
         copy_cmd(STORE, &path)

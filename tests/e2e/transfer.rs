@@ -58,8 +58,8 @@ fn bulk_upload_is_not_pinned_after_the_rpc_returns() {
 fn many_small_paths_round_trip() {
     let dir = workdir("small");
     succeed(&format!(
-        "mkdir -p {dir}/files && for i in $(seq 200); do \
-             head -c 4096 /dev/urandom | base64 > {dir}/files/f$i; done"
+        "mkdir -p {dir}/files && for i in $(seq 200); do {}; done",
+        random_file_cmd(&format!("{dir}/files/f$i"), 4096)
     ));
     let added = succeed(&format!(
         "cd {dir}/files && nix-store --store {dir}/src --add f*"
@@ -105,7 +105,7 @@ fn add_path_through_envoy() {
     wait_for_unit("envoy.service");
     wait_for_open_port(50060);
     let dir = workdir("envoy");
-    succeed(&format!("head -c 4096 /dev/urandom | base64 > {dir}/f"));
+    random_file(&format!("{dir}/f"), 4096);
     let p = succeed(&format!("nix store add --store '{ENVOY_STORE}' {dir}/f"));
     succeed(&format!("test -e '{}'", p.trim()));
     assert_journal("nix-grpc-daemon", "event=rpc method=Connect");

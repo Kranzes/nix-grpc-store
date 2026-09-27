@@ -39,9 +39,18 @@ pub fn workdir(name: &str) -> String {
     dir
 }
 
+/// Shell command that writes `bytes` random bytes, base64-encoded, to `path`.
+pub fn random_file_cmd(path: &str, bytes: usize) -> String {
+    format!("head -c {bytes} /dev/urandom | base64 > {path}")
+}
+
+pub fn random_file(path: &str, bytes: usize) {
+    succeed(&random_file_cmd(path, bytes));
+}
+
 pub fn deny_file(dir: &str) -> String {
     let path = format!("{dir}/denyfile");
-    succeed(&format!("head -c 64 /dev/urandom | base64 > {path}"));
+    random_file(&path, 64);
     path
 }
 
