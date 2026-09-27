@@ -5,6 +5,7 @@ use crate::harness::{self, MACHINE};
 pub use crate::harness::env;
 
 pub const STORE: &str = "grpc://127.0.0.1:50051?insecure=1";
+pub const ENVOY_STORE: &str = "grpc://127.0.0.1:50060?insecure=1";
 
 pub fn cert_dir() -> String {
     env("NGS_CERT_DIR")

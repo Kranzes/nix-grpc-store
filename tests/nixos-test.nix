@@ -9,6 +9,8 @@
   module,
   mockOidc,
   e2eTests,
+  # "main" or "upload"
+  phase ? "main",
 }:
 
 let
@@ -45,7 +47,7 @@ let
   signingPublicKey = "nix-grpc-test-1:RkClDwvfixdOwourBI4UD9hudE3xfU5EBQcMFUVuRV8=";
 in
 pkgs.testers.runNixOSTest {
-  name = "nix-grpc-store";
+  name = "nix-grpc-store-${phase}";
   globalTimeout = 600;
 
   # The Rust tests in tests/e2e run on the driver host and drive the VM over
@@ -56,9 +58,15 @@ pkgs.testers.runNixOSTest {
   nodes.machine =
     { config, lib, ... }:
     {
-      imports = [ module ];
+      imports = [
+        module
+        ./lib/envoy-proxy.nix
+      ];
 
       virtualisation.memorySize = 2048;
+      virtualisation.diskSize = 8192;
+      # The default overlay lives in RAM, and the 1 GiB uploads need more.
+      virtualisation.writableStoreUseTmpfs = false;
       virtualisation.cores = 2;
 
       # Must be a Nix version the plugin bundle contains a build for.
@@ -226,6 +234,7 @@ pkgs.testers.runNixOSTest {
         "NGS_OIDC_AUDIENCE": "${oidcAudience}",
         "NGS_SIGNING_KEY": "${signingSecretKey}",
     }
+  '' + pkgs.lib.optionalString (phase == "main") ''
     with subtest("daemon lifecycle"):
         run_e2e({"machine": machine}, env, "lifecycle::", "--test-threads=1")
 
@@ -234,5 +243,8 @@ pkgs.testers.runNixOSTest {
 
     with subtest("benchmarks"):
         run_e2e({"machine": machine}, env, "bench::", "--test-threads=1")
+  '' + pkgs.lib.optionalString (phase == "upload") ''
+    with subtest("concurrent uploads of one input"):
+        run_e2e({"machine": machine}, env, "upload::", "--test-threads=1")
   '';
 }

@@ -99,3 +99,14 @@ fn many_small_paths_round_trip() {
         ));
     }
 }
+
+#[test]
+fn add_path_through_envoy() {
+    wait_for_unit("envoy.service");
+    wait_for_open_port(50060);
+    let dir = workdir("envoy");
+    succeed(&format!("head -c 4096 /dev/urandom | base64 > {dir}/f"));
+    let p = succeed(&format!("nix store add --store '{ENVOY_STORE}' {dir}/f"));
+    succeed(&format!("test -e '{}'", p.trim()));
+    assert_journal("nix-grpc-daemon", "event=rpc method=Connect");
+}

@@ -8,3 +8,4 @@ mod harness;
 mod latency;
 mod lifecycle;
 mod transfer;
+mod upload;
