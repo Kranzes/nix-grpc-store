@@ -153,6 +153,10 @@ lb:
     type: ClusterIP
     port: 50051
     nodePort: null
+    # Set this when a Gateway API route is in front of the balancer. Cilium,
+    # for one, only talks HTTP/2 to a backend whose port says so, for example
+    # with kubernetes.io/h2c, and adds TLS from a BackendTLSPolicy.
+    appProtocol: null
     annotations: {}
   resources: {}
   nodeSelector: {}

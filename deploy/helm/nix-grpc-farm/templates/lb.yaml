@@ -26,6 +26,9 @@ spec:
     - name: grpc
       port: {{ .Values.lb.service.port }}
       targetPort: grpc
+      {{- with .Values.lb.service.appProtocol }}
+      appProtocol: {{ . }}
+      {{- end }}
       {{- with .Values.lb.service.nodePort }}
       nodePort: {{ . }}
       {{- end }}

@@ -57,6 +57,7 @@ let
     };
     metrics.podMonitor.enabled = false;
     metrics.vmPodScrape.enabled = true;
+    lb.service.appProtocol = "kubernetes.io/h2c";
   };
   # Service account tokens both ways, no TLS.
   valuesInCluster = lib.recursiveUpdate values {
@@ -177,6 +178,8 @@ pkgs.runCommand "nix-grpc-farm-helm-check"
       pick Certificate t-nix-grpc-farm-worker '.spec.dnsNames[]' cm.yaml | grep -qx "$n"
     done
     test "$(pick Certificate t-nix-grpc-farm-lb '.spec.commonName' cm.yaml)" = lb
+    test "$(pick Service t-nix-grpc-farm '.spec.ports[0].appProtocol' cm.yaml)" = kubernetes.io/h2c
+    test "$(pick Service t-nix-grpc-farm '.spec.ports[0].appProtocol' out.yaml)" = null
     test "$(pick Deployment t-nix-grpc-farm-scheduler-0 '.spec.template.spec.volumes[] | select(.name == "tls") | .secret.secretName' cm.yaml)" = t-nix-grpc-farm-worker-tls
     grep -q "kind: VMPodScrape" cm.yaml
     ! grep -q "kind: PodMonitor" cm.yaml
