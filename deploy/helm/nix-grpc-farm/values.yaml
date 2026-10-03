@@ -81,7 +81,9 @@ workerDefaults:
   # nix system-features. The scheduler only assigns drvs whose
   # requiredSystemFeatures a worker has.
   features: []
-  maxJobs: 1
+  # Concurrent builds per worker. "auto" is one per CPU of the node, which
+  # nix counts without regard to the pod's CPU limit.
+  maxJobs: auto
   cores: 0
   # Below this the worker tells the scheduler to stop assigning to it.
   minFree: 20G

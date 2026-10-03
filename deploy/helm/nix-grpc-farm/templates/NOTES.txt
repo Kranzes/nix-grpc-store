@@ -18,7 +18,12 @@ Build through it (drvs are evaluated locally, outputs land in {{ .Values.niks3.c
 Or as a remote builder in nix.conf on a CI host:
 
 {{- $d := mustMergeOverwrite (deepCopy .Values.workerDefaults) ((index .Values.workers (include "farm.defaultGroup" .)) | default dict) }}
+{{- if eq (toString $d.maxJobs) "auto" }}
+  builders = grpc://…?system={{ $d.system | default "x86_64-linux" }} - - <jobs>
+  (<jobs>: {{ $d.replicas }} worker(s) times their nodes' CPUs, since maxJobs is auto)
+{{- else }}
   builders = grpc://…?system={{ $d.system | default "x86_64-linux" }} - - {{ mul ($d.maxJobs | int) ($d.replicas | int) }}
+{{- end }}
   substituters = {{ .Values.niks3.cacheURL }} https://cache.nixos.org
   trusted-public-keys = {{ join " " .Values.niks3.publicKeys }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 {{- if .Values.tls.certManager.enabled }}
