@@ -190,6 +190,25 @@ tls:
       extraDnsNames: [farm.example.com]
 ```
 
+Those clients then need the farm CA to verify the balancer. To avoid
+that, give the balancer a public certificate towards clients, for example
+from an ACME `ClusterIssuer`. Clients use the system CA bundle and
+authenticate with a token, as in
+[Step 4: Connect a developer laptop](farm.md#step-4-connect-a-developer-laptop).
+The farm-CA certificate stays the balancer's certificate towards the nodes.
+
+```yaml
+tls:
+  certManager:
+    enabled: true
+    public:
+      issuerRef: {name: letsencrypt, kind: ClusterIssuer}
+      dnsNames: [farm.example.com]
+```
+
+Without cert-manager, or for a certificate from elsewhere, name its Secret
+in `tls.public.existingSecret` instead.
+
 Without cert-manager, the three Secrets come from elsewhere and the
 chart only needs their names. The comments in `values.yaml` describe what each
 certificate must contain.
@@ -408,7 +427,10 @@ certificate, the same way as in the NixOS guide. cert-manager issues it.
 1. Make the balancer reachable. Set `lb.service.type: LoadBalancer`, or
    route to the `farm-nix-grpc-farm` Service with a Gateway API
    `TLSRoute` in passthrough mode. Add the public name to
-   `tls.certManager.lb.extraDnsNames` and run `helm upgrade`.
+   `tls.certManager.lb.extraDnsNames`, or give the balancer a public
+   certificate for it as described under [Certificates](#certificates),
+   and run `helm upgrade`. With a public certificate, machines that use a token
+   need no farm CA and can skip the next two steps.
 
 1. Request a certificate from the farm's Issuer. Its common name must
    match a pattern in `auth.accessRules`:

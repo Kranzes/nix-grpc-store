@@ -1,6 +1,7 @@
 {{- $svc := include "farm.fullname" . -}}
 {{- $tls := "" -}}
-{{- if (include "farm.tlsSecret" (list . "lb")) }}{{ $tls = "?ca-cert=/path/ca.crt&client-cert=/path/client.crt&client-key=/path/client.key" }}{{ end -}}
+{{- if (include "farm.tlsSecret" (list . "public")) }}{{ $tls = "?client-cert=/path/client.crt&client-key=/path/client.key" }}
+{{- else if (include "farm.tlsSecret" (list . "lb")) }}{{ $tls = "?ca-cert=/path/ca.crt&client-cert=/path/client.crt&client-key=/path/client.key" }}{{ end -}}
 Farm address inside the cluster:
 
   grpc://{{ $svc }}.{{ .Release.Namespace }}.svc:{{ .Values.lb.service.port }}{{ $tls }}

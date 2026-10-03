@@ -126,10 +126,18 @@ app.kubernetes.io/component: scheduler
 {{- end }}
 
 {{/* Secret name for tls.<part> (lb | worker | clientCA): the cert-manager
-     managed one when tls.certManager.enabled, else existingSecret. */}}
+     managed one when tls.certManager.enabled, else existingSecret. For public,
+     its existingSecret, else the managed one if tls.certManager.public has
+     an issuerRef, else nothing. */}}
 {{- define "farm.tlsSecret" -}}
 {{- $root := index . 0 }}{{ $part := index . 1 }}
-{{- if $root.Values.tls.certManager.enabled -}}
+{{- if eq $part "public" -}}
+{{- if $root.Values.tls.public.existingSecret -}}
+{{ $root.Values.tls.public.existingSecret }}
+{{- else if and $root.Values.tls.certManager.enabled $root.Values.tls.certManager.public.issuerRef.name -}}
+{{ include "farm.fullname" $root }}-public-tls
+{{- end }}
+{{- else if $root.Values.tls.certManager.enabled -}}
 {{ include "farm.fullname" $root }}-{{ get (dict "lb" "lb-tls" "worker" "worker-tls" "clientCA" "ca") $part }}
 {{- else -}}
 {{ (get $root.Values.tls $part).existingSecret }}

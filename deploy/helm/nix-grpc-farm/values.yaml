@@ -38,6 +38,13 @@ tls:
     caDuration: 87600h
     lb:
       extraDnsNames: [] # names clients outside the cluster use for the balancer
+    # Have cert-manager issue the balancer's client-facing certificate, see
+    # tls.public, from an issuer of your choice. For example
+    #   issuerRef: {name: letsencrypt, kind: ClusterIssuer}
+    #   dnsNames: [farm.example.com]
+    public:
+      issuerRef: {}
+      dnsNames: []
   # Verifies user client certificates at the balancer, the balancer's at
   # the nodes, and worker and scheduler certificates against each other.
   clientCA:
@@ -45,6 +52,11 @@ tls:
   # Balancer: server certificate towards clients, also used as client
   # certificate towards workers (its CN must match auth.trustedProxies).
   lb:
+    existingSecret: ""
+  # Optional certificate the balancer shows clients instead of tls.lb, for
+  # example a public ACME one, so clients need no farm CA. tls.lb stays the
+  # certificate towards the nodes. The Secret is of type kubernetes.io/tls.
+  public:
     existingSecret: ""
   # Workers and scheduler: server certificate towards the balancer. Workers
   # also present it to the scheduler. Must carry a SAN for

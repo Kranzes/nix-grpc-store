@@ -77,5 +77,22 @@ spec:
   duration: {{ .duration }}
   privateKey: {algorithm: ECDSA, size: 256, rotationPolicy: Always}
   issuerRef: {name: {{ $name }}, kind: Issuer}
+{{- with .public }}
+{{- if .issuerRef.name }}
+---
+{{- /* Balancer: public certificate towards clients, from an issuer of the
+     user's choice such as an ACME one, so clients need no farm CA. */}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $name }}-public
+  labels: {{- include "farm.labels" $root | nindent 4 }}
+spec:
+  secretName: {{ $name }}-public-tls
+  dnsNames: {{- required "tls.certManager.public.dnsNames must not be empty" .dnsNames | toYaml | nindent 4 }}
+  privateKey: {algorithm: ECDSA, size: 256, rotationPolicy: Always}
+  issuerRef: {{- toYaml .issuerRef | nindent 4 }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}

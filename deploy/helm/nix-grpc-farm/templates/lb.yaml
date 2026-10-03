@@ -9,6 +9,7 @@ data:
   envoy.json: {{ include "farm.envoy.config" . | quote }}
   sds-lb.yaml: {{ include "farm.envoy.sdsFile" "lb" | quote }}
   sds-ca.yaml: {{ include "farm.envoy.sdsFile" "ca" | quote }}
+  sds-public.yaml: {{ include "farm.envoy.sdsFile" "public" | quote }}
 ---
 apiVersion: v1
 kind: Service
@@ -94,12 +95,16 @@ spec:
             - {name: config, mountPath: /etc/envoy/envoy.json, subPath: envoy.json, readOnly: true}
             - {name: config, mountPath: /etc/envoy/sds-lb.yaml, subPath: sds-lb.yaml, readOnly: true}
             - {name: config, mountPath: /etc/envoy/sds-ca.yaml, subPath: sds-ca.yaml, readOnly: true}
+            - {name: config, mountPath: /etc/envoy/sds-public.yaml, subPath: sds-public.yaml, readOnly: true}
             - {name: tmp, mountPath: /tmp}
             {{- if (include "farm.tlsSecret" (list . "lb")) }}
             - {name: tls-lb, mountPath: /etc/envoy/tls/lb, readOnly: true}
             {{- end }}
             {{- if (include "farm.tlsSecret" (list . "clientCA")) }}
             - {name: tls-ca, mountPath: /etc/envoy/tls/ca, readOnly: true}
+            {{- end }}
+            {{- if (include "farm.tlsSecret" (list . "public")) }}
+            - {name: tls-public, mountPath: /etc/envoy/tls/public, readOnly: true}
             {{- end }}
           {{- with .Values.lb.resources }}
           resources: {{- toYaml . | nindent 12 }}
@@ -117,6 +122,10 @@ spec:
         {{- end }}
         {{- with (include "farm.tlsSecret" (list . "clientCA")) }}
         - name: tls-ca
+          secret: {secretName: {{ . }}}
+        {{- end }}
+        {{- with (include "farm.tlsSecret" (list . "public")) }}
+        - name: tls-public
           secret: {secretName: {{ . }}}
         {{- end }}
 {{- end }}

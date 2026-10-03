@@ -60,6 +60,17 @@ let
     metrics.vmPodScrape.enabled = true;
     lb.service.appProtocol = "kubernetes.io/h2c";
   };
+  # Public client-facing certificate next to the farm PKI, both ways to get one.
+  valuesPublicCertManager = lib.recursiveUpdate valuesCertManager {
+    tls.certManager.public = {
+      issuerRef = {
+        name = "letsencrypt";
+        kind = "ClusterIssuer";
+      };
+      dnsNames = [ "farm.example.com" ];
+    };
+  };
+  valuesPublicSecret = lib.recursiveUpdate values { tls.public.existingSecret = "public"; };
   # Service account tokens both ways, no TLS.
   valuesInCluster = lib.recursiveUpdate values {
     niks3.auth = {
@@ -76,7 +87,16 @@ let
   # formats.yaml emits a %YAML directive that helm rejects. JSON is YAML.
   json = pkgs.formats.json { };
   valuesFile = json.generate "values.json" values;
-  allValuesFiles = map (json.generate "values.json") ([ values valuesInCluster valuesCertManager ] ++ extraValues);
+  allValuesFiles = map (json.generate "values.json") (
+    [
+      values
+      valuesInCluster
+      valuesCertManager
+      valuesPublicCertManager
+      valuesPublicSecret
+    ]
+    ++ extraValues
+  );
 
   # Same topology through the NixOS module.
   nixosEnvoy =
@@ -188,6 +208,20 @@ pkgs.runCommand "nix-grpc-farm-helm-check"
     test "$(pick Deployment t-nix-grpc-farm-scheduler-0 '.spec.template.spec.volumes[] | select(.name == "tls") | .secret.secretName' cm.yaml)" = t-nix-grpc-farm-worker-tls
     grep -q "kind: VMPodScrape" cm.yaml
     ! grep -q "kind: PodMonitor" cm.yaml
+
+    # A public certificate faces clients, the farm-CA one still faces the nodes.
+    envoyCerts() { yq -r 'select(.kind == "ConfigMap" and .metadata.name == "t-nix-grpc-farm-lb") | .data."envoy.json"' "$1" \
+      | jq -c '[.static_resources.listeners[0].filter_chains[0].transport_socket.typed_config.common_tls_context.tls_certificate_sds_secret_configs[0].name, ([.static_resources.clusters[].transport_socket.typed_config.common_tls_context.tls_certificate_sds_secret_configs[0].name] | unique)]'; }
+    test "$(envoyCerts out.yaml)" = '["lb",["lb"]]'
+    ! grep -q "name: t-nix-grpc-farm-public" cm.yaml
+    helm template t chart -f ${json.generate "values.json" valuesPublicCertManager} > public-cm.yaml
+    test "$(envoyCerts public-cm.yaml)" = '["public",["lb"]]'
+    test "$(pick Certificate t-nix-grpc-farm-public '.spec.issuerRef.name' public-cm.yaml)" = letsencrypt
+    test "$(pick Certificate t-nix-grpc-farm-public '.spec.dnsNames[0]' public-cm.yaml)" = farm.example.com
+    test "$(pick Deployment t-nix-grpc-farm-lb '.spec.template.spec.volumes[] | select(.name == "tls-public") | .secret.secretName' public-cm.yaml)" = t-nix-grpc-farm-public-tls
+    helm template t chart -f ${json.generate "values.json" valuesPublicSecret} --api-versions monitoring.coreos.com/v1/PodMonitor > public-secret.yaml
+    test "$(envoyCerts public-secret.yaml)" = '["public",["lb"]]'
+    test "$(pick Deployment t-nix-grpc-farm-lb '.spec.template.spec.volumes[] | select(.name == "tls-public") | .secret.secretName' public-secret.yaml)" = public
 
     touch $out
   ''

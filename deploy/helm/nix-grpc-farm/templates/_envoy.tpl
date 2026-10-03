@@ -9,10 +9,10 @@
 resources:
   - "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret
     name: {{ . }}
-    {{- if eq . "lb" }}
+    {{- if has . (list "lb" "public") }}
     tls_certificate:
-      certificate_chain: {filename: /etc/envoy/tls/lb/tls.crt}
-      private_key: {filename: /etc/envoy/tls/lb/tls.key}
+      certificate_chain: {filename: /etc/envoy/tls/{{ . }}/tls.crt}
+      private_key: {filename: /etc/envoy/tls/{{ . }}/tls.key}
     {{- else }}
     validation_context:
       trusted_ca: {filename: /etc/envoy/tls/ca/ca.crt}
@@ -176,7 +176,8 @@ filter_chains:
             - name: envoy.filters.http.router
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
-    {{- if (include "farm.tlsSecret" (list . "lb")) }}
+    {{- $public := include "farm.tlsSecret" (list . "public") }}
+    {{- if or $public (include "farm.tlsSecret" (list . "lb")) }}
     transport_socket:
       name: envoy.transport_sockets.tls
       typed_config:
@@ -186,7 +187,9 @@ filter_chains:
         {{- end }}
         common_tls_context:
           alpn_protocols: [h2]
-          tls_certificate_sds_secret_configs: [{{ include "farm.envoy.sds" "lb" }}]
+          # Clients get the public certificate if there is one, else the
+          # farm-CA one. The nodes always get tls.lb.
+          tls_certificate_sds_secret_configs: [{{ include "farm.envoy.sds" ($public | empty | ternary "lb" "public") }}]
           {{- if (include "farm.tlsSecret" (list . "clientCA")) }}
           validation_context_sds_secret_config: {{ include "farm.envoy.sds" "ca" }}
           {{- end }}
