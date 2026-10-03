@@ -215,6 +215,11 @@ scheduler:
 
 Worker and balancer pods already prefer separate nodes (`spread: true`).
 Scheduler replicas insist on it.
+Set `spread: required` on a worker group or `lb` to insist on it. The
+spread leaves out nodes with taints the pods don't tolerate, such as a
+control plane.
+Only pods of the same rollout count, so a rolling update spreads the new
+pods even while old ones still drain.
 
 ### Autoscale a worker group
 

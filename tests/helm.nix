@@ -35,6 +35,7 @@ let
       };
       arm = {
         system = "aarch64-linux";
+        spread = "required";
       };
     };
     defaultGroup = "x86";
@@ -170,6 +171,10 @@ pkgs.runCommand "nix-grpc-farm-helm-check"
     # Default placement: workers spread, scheduler replicas on distinct nodes.
     pick() { yq "select(.kind == \"$1\" and .metadata.name == \"$2\") | $3" "$4"; }
     test "$(pick Deployment t-nix-grpc-farm-worker-x86 '.spec.template.spec.topologySpreadConstraints[0].topologyKey' out.yaml)" = kubernetes.io/hostname
+    test "$(pick Deployment t-nix-grpc-farm-worker-x86 '.spec.template.spec.topologySpreadConstraints[0].whenUnsatisfiable' out.yaml)" = ScheduleAnyway
+    test "$(pick Deployment t-nix-grpc-farm-worker-x86 '.spec.template.spec.topologySpreadConstraints[0].nodeTaintsPolicy' out.yaml)" = Honor
+    test "$(pick Deployment t-nix-grpc-farm-worker-x86 '.spec.template.spec.topologySpreadConstraints[0].matchLabelKeys[0]' out.yaml)" = pod-template-hash
+    test "$(pick Deployment t-nix-grpc-farm-worker-arm '.spec.template.spec.topologySpreadConstraints[0].whenUnsatisfiable' out.yaml)" = DoNotSchedule
     test "$(pick Deployment t-nix-grpc-farm-scheduler-0 '.spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey' out.yaml)" = kubernetes.io/hostname
 
     # cert-manager mode: chart-named Secrets everywhere, worker cert covers every scheduler Service.

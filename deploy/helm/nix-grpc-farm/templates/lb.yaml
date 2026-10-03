@@ -71,14 +71,7 @@ spec:
       {{- with .Values.lb.affinity }}
       affinity: {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.lb.spread }}
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels: {{- $sel | nindent 14 }}
-      {{- end }}
+      {{- include "farm.spread" (dict "spread" .Values.lb.spread "selector" $sel) | nindent 6 }}
       containers:
         - name: envoy
           image: {{ include "farm.lbImage" . }}

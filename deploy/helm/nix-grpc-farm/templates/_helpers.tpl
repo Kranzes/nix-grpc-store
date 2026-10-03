@@ -135,3 +135,21 @@ app.kubernetes.io/component: scheduler
 {{ (get $root.Values.tls $part).existingSecret }}
 {{- end }}
 {{- end }}
+
+{{/* One pod per node. spread: true prefers it, "required" insists on it.
+     Tainted nodes the pods can't run on don't count as empty ones.
+     Only pods of the same rollout count, so old pods that are still
+     draining don't affect where the new ones go.
+     Call with (dict "spread" <value> "selector" <matchLabels YAML>). */}}
+{{- define "farm.spread" -}}
+{{- if .spread }}
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: {{ eq (toString .spread) "required" | ternary "DoNotSchedule" "ScheduleAnyway" }}
+    nodeTaintsPolicy: Honor
+    matchLabelKeys: [pod-template-hash]
+    labelSelector:
+      matchLabels: {{- .selector | nindent 8 }}
+{{- end }}
+{{- end }}

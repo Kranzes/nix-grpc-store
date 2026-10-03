@@ -98,14 +98,7 @@ spec:
       {{- with $w.affinity }}
       affinity: {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if $w.spread }}
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels: {{- $sel | nindent 14 }}
-      {{- end }}
+      {{- include "farm.spread" (dict "spread" $w.spread "selector" $sel) | nindent 6 }}
       initContainers:
         # /nix is an emptyDir so the store is writable and sized. Seed it
         # from the image. The image's DB registration comes along.

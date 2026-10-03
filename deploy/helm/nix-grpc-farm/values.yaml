@@ -98,7 +98,7 @@ workerDefaults:
   nodeSelector: {}
   tolerations: []
   affinity: {}
-  spread: true # prefer one pod per node
+  spread: true # prefer one pod per node, "required" to insist, false to turn off
   podAnnotations: {}
 # One Deployment per entry, the key names the group. E.g.
 #   x86-64: {system: x86_64-linux, replicas: 4, nodeSelector: {kubernetes.io/arch: amd64}}
@@ -162,7 +162,7 @@ lb:
   nodeSelector: {}
   tolerations: []
   affinity: {}
-  spread: true
+  spread: true # as workerDefaults.spread
   podAnnotations: {}
 
 metrics:
