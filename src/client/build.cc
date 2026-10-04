@@ -45,6 +45,7 @@
 #include <nix/util/signals.hh>
 #include <nix/util/strings.hh>
 
+#include "channel.hh"
 #include "nix-compat.hh"
 #include "nix_remote.grpc.pb.h"
 #include "nix_remote.pb.h"
@@ -103,7 +104,7 @@ auto GrpcStore::tryBuildDerivation(const remote::BuildDerivationRequest & reques
   grpc::ClientContext ctx;
   addHeaders(ctx, headers);
   // ^C cancels the stream so the worker stops the build at once.
-  auto const onInterrupt = createInterruptCallback([&ctx] -> void { ctx.TryCancel(); });
+  auto const onInterrupt = nixgrpc::cancelOnInterrupt(ctx);
   auto reader = stub->BuildDerivation(&ctx, request);
 
   // Named like nix's own actBuild so log UIs merge them, opened lazily so the NOT_FOUND probe is silent.
@@ -144,6 +145,7 @@ auto GrpcStore::buildAssigned(Job & job, BuildMode buildMode, Store & evalStore)
   case grpc::StatusCode::UNAVAILABLE:         // worker draining or gone
   case grpc::StatusCode::UNKNOWN:             // worker died mid-stream ("Stream removed"),
   case grpc::StatusCode::INTERNAL:            //   or RST_STREAM via the balancer
+    checkInterrupt();
     printError("%s: %s, asking the scheduler again", job.drvPath.to_string(), firstLine(status.error_message()));
     return std::nullopt;
   default:

@@ -333,6 +333,7 @@ public:
       auto pause = std::chrono::milliseconds(500); // NOLINT(*-magic-numbers)
       for (;;) {
         auto const status = attempt();
+        checkInterrupt();
         if (status.ok()) {
           everConnected = true;
         }
@@ -340,7 +341,6 @@ public:
           checkStatus(status, what);
           return;
         }
-        checkInterrupt();
         printError("%s: %s, retrying", config->authority.to_string(), firstLine(status.error_message()));
         std::this_thread::sleep_for(pause);
         pause = std::min(pause * 2, std::chrono::milliseconds(4000)); // NOLINT(*-magic-numbers)
@@ -581,6 +581,7 @@ private:
         // blocking, ordered semantics the worker protocol relies on without
         // reimplementing Source/Sink on top of gRPC.
         grpc::ClientContext ctx;
+        std::unique_ptr<nix::InterruptCallback> onInterrupt;
         std::unique_ptr<GrpcStream> stream;
 
         Pipe toRemote;   // plugin writes → reader thread sends over gRPC

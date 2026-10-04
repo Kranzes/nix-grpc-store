@@ -16,7 +16,6 @@
 #include <vector>
 
 #include <grpcpp/grpcpp.h>
-#include <grpcpp/support/client_interceptor.h>
 #include <grpcpp/support/status.h>
 #include <grpcpp/support/sync_stream.h>
 
@@ -32,6 +31,7 @@
 #include <nix/util/serialise.hh>
 #include <nix/util/util.hh>
 
+#include "channel.hh"
 #include "nix-compat.hh"
 #include "nix_remote.grpc.pb.h"
 #include "nix_remote.pb.h"
@@ -50,6 +50,7 @@ auto GrpcStore::queryValidPathsRouted(const StorePathSet & paths, SubstituteFlag
   remote::QueryValidPathsReply reply;
   retrying("QueryValidPaths", [&] -> grpc::Status {
     grpc::ClientContext ctx;
+    auto const onInterrupt = nixgrpc::cancelOnInterrupt(ctx);
     addHeaders(ctx, headers);
     reply.Clear();
     return stub->QueryValidPaths(&ctx, request, &reply);
@@ -71,6 +72,7 @@ auto GrpcStore::queryMissing(const std::vector<DerivedPath> & targets)
   bool unimplemented = false;
   retrying("QueryMissing", [&] -> grpc::Status {
     grpc::ClientContext ctx;
+    auto const onInterrupt = nixgrpc::cancelOnInterrupt(ctx);
     reply.Clear();
     auto const status = stub->QueryMissing(&ctx, request, &reply);
     unimplemented = status.error_code() == grpc::StatusCode::UNIMPLEMENTED;
@@ -117,6 +119,7 @@ auto GrpcStore::queryPathInfosNative(const StorePathSet &paths) -> PathInfoMap {
   remote::QueryPathInfosReply reply;
   retrying("QueryPathInfos", [&] -> grpc::Status {
     grpc::ClientContext ctx;
+    auto const onInterrupt = nixgrpc::cancelOnInterrupt(ctx);
     reply.Clear();
     return stub->QueryPathInfos(&ctx, request, &reply);
   });
@@ -238,6 +241,7 @@ auto GrpcStore::addMultipleToStoreOnce(
     grpc::ClientContext ctx;
     addHeaders(ctx, headers);
     remote::AddMultipleReply reply;
+    auto const onInterrupt = nixgrpc::cancelOnInterrupt(ctx);
     auto writer = stub->AddMultipleToStore(&ctx, &reply);
 
     try {

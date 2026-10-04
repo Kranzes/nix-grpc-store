@@ -24,6 +24,7 @@
 #include <nix/util/file-descriptor.hh>
 #include <nix/util/file-system.hh>
 #include <nix/util/serialise.hh>
+#include <nix/util/signals.hh>
 #include <nix/util/util.hh>
 #include <string>
 #include <string_view>
@@ -33,6 +34,7 @@
 #include <vector>
 #include <zstd.h>
 
+#include "channel.hh"
 #include "nix_remote.grpc.pb.h"
 #include "nix_remote.pb.h"
 #include "pump.hh"
@@ -236,6 +238,7 @@ private:
 
         std::unique_ptr<nix::remote::NixRemote::Stub> stub;
         grpc::ClientContext ctx;
+        std::unique_ptr<nix::InterruptCallback> onInterrupt;
         std::unique_ptr<grpc::ClientReader<nix::remote::NarFrame>> reader;
         std::vector<std::shared_ptr<NarSpool>> targets;
         std::jthread thread;
@@ -245,7 +248,9 @@ private:
             try {
                 demuxNarFrames(*reader, targets);
                 auto const status = reader->Finish();
-                auto cause = std::make_exception_ptr(
+                auto cause = nix::isInterrupted()
+                    ? std::make_exception_ptr(nix::Interrupted("interrupted by the user"))
+                    : std::make_exception_ptr(
                     status.ok() ? nix::Error("gRPC FetchNars stream ended early")
                                 : nix::Error("gRPC FetchNars failed: %s", status.error_message()));
                 for (const auto & target : targets) {
@@ -304,6 +309,7 @@ private:
     void startSession(const std::vector<nix::StorePath> & paths)
     {
         auto session = std::make_unique<Session>();
+        session->onInterrupt = cancelOnInterrupt(session->ctx);
         session->stub = nix::remote::NixRemote::NewStub(channelFactory());
         nix::remote::FetchNarsRequest request;
         for (const auto & path : paths) {

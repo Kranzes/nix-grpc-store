@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include <grpcpp/client_context.h>
 #include <grpcpp/security/auth_context.h>
 #include <grpcpp/security/credentials.h>
 #include <grpcpp/support/client_interceptor.h>
@@ -18,9 +19,18 @@
 #include <grpcpp/support/string_ref.h>
 
 #include <nix/util/file-system.hh>
+#include <nix/util/signals.hh>
 #include <nix/util/util.hh>
 
 namespace nixgrpc {
+
+// Cancels ctx on SIGINT for as long as the result lives. Nix runs interrupt
+// callbacks only when the signal arrives, so throw for one that came before.
+[[nodiscard]] inline auto cancelOnInterrupt(grpc::ClientContext & ctx) -> std::unique_ptr<nix::InterruptCallback>
+{
+  nix::checkInterrupt();
+  return nix::createInterruptCallback([&ctx] -> void { ctx.TryCancel(); });
+}
 
 // The server rejects an expired client cert during the TLS handshake, which
 // gRPC reports only as "Socket closed", so check up front.
