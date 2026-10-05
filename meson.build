@@ -269,6 +269,13 @@ if build_server
     cpp_args : ['-UNDEBUG'],
   ))
 
+  test('nar-fetcher', executable('nar-fetcher-test',
+    sources : ['tests/nar-fetcher-test.cc', gen],
+    include_directories : [gen_inc, src_inc, include_directories('src/client')],
+    cpp_args : nix_compat_args + ['-UNDEBUG'],
+    dependencies : common_deps + [nix_store_dep, nix_util_dep],
+  ), timeout : 30)
+
   test('upload-claims', executable('upload-claims-test',
     sources : ['tests/upload-claims-test.cc'],
     include_directories : [src_inc, include_directories('src/daemon')],

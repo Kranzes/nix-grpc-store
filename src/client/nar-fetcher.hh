@@ -213,14 +213,22 @@ public:
             }
             buffer = found->second;
         }
-        buffer->readInto(sink);
-        {
+        // Also on failure: a cached failure would be rethrown for every later
+        // request of this path, even after the cause (^C in a repl) is gone.
+        auto const forget = [&] -> void {
             std::scoped_lock const lock(narMutex);
             auto const found = buffers.find(path);
             if (found != buffers.end() && found->second == buffer) {
                 buffers.erase(found);
             }
+        };
+        try {
+            buffer->readInto(sink);
+        } catch (...) {
+            forget();
+            throw;
         }
+        forget();
     }
 
     ~NarFetcher()
