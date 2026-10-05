@@ -49,11 +49,10 @@ auto GrpcStore::queryValidPathsRouted(const StorePathSet & paths, SubstituteFlag
   }
   remote::QueryValidPathsReply reply;
   retrying("QueryValidPaths", [&] -> grpc::Status {
-    grpc::ClientContext ctx;
-    auto const onInterrupt = nixgrpc::cancelOnInterrupt(ctx);
-    addHeaders(ctx, headers);
+    nixgrpc::Call call;
+    addHeaders(call.ctx(), headers);
     reply.Clear();
-    return stub->QueryValidPaths(&ctx, request, &reply);
+    return stub->QueryValidPaths(&call.ctx(), request, &reply);
   });
   StorePathSet res;
   for (const auto &path : reply.paths()) {
@@ -71,10 +70,9 @@ auto GrpcStore::queryMissing(const std::vector<DerivedPath> & targets)
   remote::QueryMissingReply reply;
   bool unimplemented = false;
   retrying("QueryMissing", [&] -> grpc::Status {
-    grpc::ClientContext ctx;
-    auto const onInterrupt = nixgrpc::cancelOnInterrupt(ctx);
+    nixgrpc::Call call;
     reply.Clear();
-    auto const status = stub->QueryMissing(&ctx, request, &reply);
+    auto const status = stub->QueryMissing(&call.ctx(), request, &reply);
     unimplemented = status.error_code() == grpc::StatusCode::UNIMPLEMENTED;
     return unimplemented ? grpc::Status::OK : status;
   });
@@ -118,10 +116,9 @@ auto GrpcStore::queryPathInfosNative(const StorePathSet &paths) -> PathInfoMap {
   }
   remote::QueryPathInfosReply reply;
   retrying("QueryPathInfos", [&] -> grpc::Status {
-    grpc::ClientContext ctx;
-    auto const onInterrupt = nixgrpc::cancelOnInterrupt(ctx);
+    nixgrpc::Call call;
     reply.Clear();
-    return stub->QueryPathInfos(&ctx, request, &reply);
+    return stub->QueryPathInfos(&call.ctx(), request, &reply);
   });
 
   PathInfoMap res;
@@ -238,11 +235,10 @@ auto GrpcStore::addMultipleToStoreOnce(
     }
     act.setExpected(actCopyPath, bytesExpected);
 
-    grpc::ClientContext ctx;
-    addHeaders(ctx, headers);
+    nixgrpc::Call call;
+    addHeaders(call.ctx(), headers);
     remote::AddMultipleReply reply;
-    auto const onInterrupt = nixgrpc::cancelOnInterrupt(ctx);
-    auto writer = stub->AddMultipleToStore(&ctx, &reply);
+    auto writer = stub->AddMultipleToStore(&call.ctx(), &reply);
 
     try {
         // Flags travel on the first message; everything after is one zstd

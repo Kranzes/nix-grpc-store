@@ -191,9 +191,8 @@ auto GrpcStore::isTrustedClient() -> std::optional<TrustedFlag> {
     remote::StoreInfoRequest const request;
     remote::StoreInfoReply reply;
     retrying("StoreInfo", [&] -> grpc::Status {
-      grpc::ClientContext ctx;
-      auto const onInterrupt = nixgrpc::cancelOnInterrupt(ctx);
-      return stub->StoreInfo(&ctx, request, &reply);
+      nixgrpc::Call call;
+      return stub->StoreInfo(&call.ctx(), request, &reply);
     });
     if (reply.has_trusted()) {
       trusted = reply.trusted() ? Trusted : NotTrusted;
@@ -205,8 +204,7 @@ auto GrpcStore::isTrustedClient() -> std::optional<TrustedFlag> {
 auto GrpcStore::openConnection() -> ref<RemoteStore::Connection> {
   auto const conn = make_ref<Connection>();
 
-  conn->onInterrupt = nixgrpc::cancelOnInterrupt(conn->ctx);
-  conn->stream = stub->Connect(&conn->ctx);
+  conn->stream = stub->Connect(&conn->call.ctx());
   if (!conn->stream) {
     throw Error("failed to open gRPC stream to '%s'",
                 config->authority.to_string());

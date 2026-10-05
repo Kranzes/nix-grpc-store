@@ -61,6 +61,8 @@ stdenv.mkDerivation {
         ../../tests/plugin-loader-test.cc
         ../../tests/upload-claims-test.cc
         ../../tests/upload-spool-test.cc
+        ../../tests/call-test.cc
+        ../../tests/nar-fetcher-test.cc
         ../../tests/scheduler-test.cc
         ../../tests/dispatcher-bench.cc
         ../../tests/scheduler-grpc-bench.cc

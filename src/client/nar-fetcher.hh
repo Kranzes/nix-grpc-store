@@ -234,7 +234,7 @@ public:
     ~NarFetcher()
     {
         for (const auto & session : sessions) {
-            session->ctx.TryCancel();
+            session->call.ctx().TryCancel();
             session->thread = {};
         }
     }
@@ -245,8 +245,7 @@ private:
         friend class NarFetcher;
 
         std::unique_ptr<nix::remote::NixRemote::Stub> stub;
-        grpc::ClientContext ctx;
-        std::unique_ptr<nix::InterruptCallback> onInterrupt;
+        nixgrpc::Call call;
         std::unique_ptr<grpc::ClientReader<nix::remote::NarFrame>> reader;
         std::vector<std::shared_ptr<NarSpool>> targets;
         std::jthread thread;
@@ -256,9 +255,10 @@ private:
             try {
                 demuxNarFrames(*reader, targets);
                 auto const status = reader->Finish();
-                auto cause = nix::isInterrupted()
-                    ? std::make_exception_ptr(nix::Interrupted("interrupted by the user"))
-                    : std::make_exception_ptr(
+                if (!status.ok()) {
+                    nix::checkInterrupt(); // our own cancel; the handler below passes it on
+                }
+                auto cause = std::make_exception_ptr(
                     status.ok() ? nix::Error("gRPC FetchNars stream ended early")
                                 : nix::Error("gRPC FetchNars failed: %s", status.error_message()));
                 for (const auto & target : targets) {
@@ -317,7 +317,6 @@ private:
     void startSession(const std::vector<nix::StorePath> & paths)
     {
         auto session = std::make_unique<Session>();
-        session->onInterrupt = cancelOnInterrupt(session->ctx);
         session->stub = nix::remote::NixRemote::NewStub(channelFactory());
         nix::remote::FetchNarsRequest request;
         for (const auto & path : paths) {
@@ -326,7 +325,7 @@ private:
             session->targets.push_back(buffer);
             buffers.emplace(path, std::move(buffer));
         }
-        session->reader = session->stub->FetchNars(&session->ctx, request);
+        session->reader = session->stub->FetchNars(&session->call.ctx(), request);
         if (!session->reader) {
             throw nix::Error("failed to open gRPC FetchNars stream to '%s'", authority);
         }

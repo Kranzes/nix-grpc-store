@@ -509,8 +509,7 @@ public:
     auto localEvalStore(const StorePathSet & drvPaths) -> std::shared_ptr<Store>;
 
     auto runJobs(std::map<StorePath, Job> & jobs, BuildMode buildMode, Store & evalStore) -> void;
-    auto scheduleUntilDone(Run & run, const Metadata & headers,
-                           const std::function<void(grpc::ClientContext *)> & setCtx) -> grpc::Status;
+    auto scheduleUntilDone(Run & run, const Metadata & headers) -> grpc::Status;
 
     // Single drv without a DAG (build hook, legacy buildDerivation callers).
     auto buildOne(const StorePath & drvPath, const BasicDerivation & drv, BuildMode buildMode,
@@ -580,8 +579,7 @@ private:
         // gRPC stream to a pair of pipes with pump threads. This keeps the
         // blocking, ordered semantics the worker protocol relies on without
         // reimplementing Source/Sink on top of gRPC.
-        grpc::ClientContext ctx;
-        std::unique_ptr<nix::InterruptCallback> onInterrupt;
+        nixgrpc::Call call;
         std::unique_ptr<GrpcStream> stream;
 
         Pipe toRemote;   // plugin writes → reader thread sends over gRPC
@@ -611,7 +609,7 @@ private:
           // The pipe ends drained by the pump threads are owned by those
           // threads; touching them here would race with their own close().
           toRemote.writeSide.close();
-          ctx.TryCancel();
+          call.ctx().TryCancel();
           reader = {};
           writer = {};
           if (stream && !finished) {

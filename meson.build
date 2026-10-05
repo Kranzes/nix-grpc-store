@@ -276,6 +276,13 @@ if build_server
     dependencies : common_deps + [nix_store_dep, nix_util_dep],
   ), timeout : 30)
 
+  test('call', executable('call-test',
+    sources : ['tests/call-test.cc', gen],
+    include_directories : [gen_inc, src_inc, include_directories('src/client')],
+    cpp_args : nix_compat_args + ['-UNDEBUG'],
+    dependencies : common_deps + [nix_store_dep, nix_util_dep],
+  ), timeout : 30)
+
   test('upload-claims', executable('upload-claims-test',
     sources : ['tests/upload-claims-test.cc'],
     include_directories : [src_inc, include_directories('src/daemon')],

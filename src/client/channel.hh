@@ -24,13 +24,32 @@
 
 namespace nixgrpc {
 
-// Cancels ctx on SIGINT for as long as the result lives. Nix runs interrupt
-// callbacks only when the signal arrives, so throw for one that came before.
-[[nodiscard]] inline auto cancelOnInterrupt(grpc::ClientContext & ctx) -> std::unique_ptr<nix::InterruptCallback>
+// The only way to start an RPC: owns the ClientContext and cancels it on
+// SIGINT for as long as the call lives, so no call can forget to be
+// interruptible. Hold it only while a call runs; an idle holder would be
+// cancelled for nothing.
+class Call
 {
-  nix::checkInterrupt();
-  return nix::createInterruptCallback([&ctx] -> void { ctx.TryCancel(); });
-}
+  grpc::ClientContext context;
+  // After context: destroyed first, so the callback never sees a dead context.
+  std::unique_ptr<nix::InterruptCallback> onInterrupt;
+
+public:
+  // Registers before checking: a signal between the two would be lost.
+  Call()
+    : onInterrupt(nix::createInterruptCallback([this] -> void { context.TryCancel(); }))
+  {
+    nix::checkInterrupt();
+  }
+
+  Call(const Call &) = delete;
+  Call(Call &&) = delete;
+  auto operator=(const Call &) -> Call & = delete;
+  auto operator=(Call &&) -> Call & = delete;
+  ~Call() = default;
+
+  [[nodiscard]] auto ctx() -> grpc::ClientContext & { return context; }
+};
 
 // The server rejects an expired client cert during the TLS handshake, which
 // gRPC reports only as "Socket closed", so check up front.

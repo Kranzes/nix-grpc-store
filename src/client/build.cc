@@ -101,11 +101,10 @@ void GrpcStore::uploadDrvClosure(Store & evalStore, const StorePath & drvPath, c
 
 auto GrpcStore::tryBuildDerivation(const remote::BuildDerivationRequest & request, const Metadata & headers,
                         std::optional<BuildResult> & res) -> grpc::Status {
-  grpc::ClientContext ctx;
-  addHeaders(ctx, headers);
   // ^C cancels the stream so the worker stops the build at once.
-  auto const onInterrupt = nixgrpc::cancelOnInterrupt(ctx);
-  auto reader = stub->BuildDerivation(&ctx, request);
+  nixgrpc::Call call;
+  addHeaders(call.ctx(), headers);
+  auto reader = stub->BuildDerivation(&call.ctx(), request);
 
   // Named like nix's own actBuild so log UIs merge them, opened lazily so the NOT_FOUND probe is silent.
   auto const drv = printStorePath(StorePath(request.drv_path()));
@@ -138,6 +137,10 @@ auto GrpcStore::buildAssigned(Job & job, BuildMode buildMode, Store & evalStore)
     uploadDrvClosure(evalStore, job.drvPath, headers);
     status = tryBuildDerivation(request, headers, res);
   }
+  // Our own cancel ends the stream CANCELLED, and a dead worker looks the same.
+  if (!status.ok()) {
+    checkInterrupt();
+  }
   switch (status.error_code()) {
   case grpc::StatusCode::ABORTED: // superseded: the scheduler already sent where to go
     return std::nullopt;
@@ -145,7 +148,6 @@ auto GrpcStore::buildAssigned(Job & job, BuildMode buildMode, Store & evalStore)
   case grpc::StatusCode::UNAVAILABLE:         // worker draining or gone
   case grpc::StatusCode::UNKNOWN:             // worker died mid-stream ("Stream removed"),
   case grpc::StatusCode::INTERNAL:            //   or RST_STREAM via the balancer
-    checkInterrupt();
     printError("%s: %s, asking the scheduler again", job.drvPath.to_string(), firstLine(status.error_message()));
     return std::nullopt;
   default:
@@ -506,22 +508,19 @@ void logReconnect(const std::string & where, const grpc::Status & status, bool r
 
 // The scheduler holds soft state only: on a broken stream reconnect and
 // re-Want everything not yet placed. Jobs already Assigned carry on.
-auto GrpcStore::scheduleUntilDone(Run & run, const Metadata & headers,
-                                  const std::function<void(grpc::ClientContext *)> & setCtx) -> grpc::Status {
+auto GrpcStore::scheduleUntilDone(Run & run, const Metadata & headers) -> grpc::Status {
   grpc::Status status;
   auto giveUp = std::chrono::steady_clock::time_point::max();
   auto pause = reconnectPause;
   bool handover = false;
   for (;;) {
-    grpc::ClientContext ctx;
-    addHeaders(ctx, headers);
-    setCtx(&ctx);
-    auto stream = sched->Schedule(&ctx);
+    nixgrpc::Call call;
+    addHeaders(call.ctx(), headers);
+    auto stream = sched->Schedule(&call.ctx());
     run.attach(stream.get());
     debug("grpc: Schedule stream open, %d jobs", run.jobs.size());
-    auto const [answered, restarting] = readSchedule(*stream, run, ctx);
+    auto const [answered, restarting] = readSchedule(*stream, run, call.ctx());
     status = stream->Finish();
-    setCtx(nullptr);
     if (run.detach() == 0 || isInterrupted() || !(restarting || schedulerGone(status))) {
       return status;
     }
@@ -554,19 +553,6 @@ void GrpcStore::runJobs(std::map<StorePath, Job> & jobs, BuildMode buildMode, St
     }
   }
   auto const headers = routingFor(jobs.begin()->second.drv);
-  std::mutex ctxMutex; // not run.mutex: the interrupt callback must not wait on stream I/O
-  grpc::ClientContext * liveCtx = nullptr;
-  auto const setCtx = [&](grpc::ClientContext * ctx) -> void {
-    std::scoped_lock const lock(ctxMutex);
-    liveCtx = ctx;
-  };
-  auto const onInterrupt = createInterruptCallback([&] -> void {
-    std::scoped_lock const lock(ctxMutex);
-    if (liveCtx != nullptr) {
-      liveCtx->TryCancel();
-    }
-  });
-
   std::vector<std::jthread> threads(std::min<size_t>(config->maxBuilds, jobs.size()));
   for (auto & thread : threads) {
     thread = std::jthread([&run] -> void { run.work(); });
@@ -576,7 +562,7 @@ void GrpcStore::runJobs(std::map<StorePath, Job> & jobs, BuildMode buildMode, St
   // Also on unwind: lets the threads drain so the join in ~jthread returns.
   Finally const abandon([&run] -> void { run.abandon(); });
 
-  auto const status = scheduleUntilDone(run, headers, setCtx);
+  auto const status = scheduleUntilDone(run, headers);
   run.abandon();
   reaper.request_stop();
   threads.clear(); // join
